@@ -42,8 +42,93 @@ const handleSelfPlus = ( user, channel ) => {
  * @return {Promise} A Promise to send a Slack message back to the requesting channel after the
  *                   points have been updated.
  */
-const handlePlusMinus = async( item, operation, channel ) => {
-  const score = await points.updateScore( item, operation ),
+const handlePlusMinus = async( item, operation, channel, userInit ) => {
+  console.log( userInit + ' triggered a operation on ' + item );
+  const check = await points.checkCanUpdate(userInit);
+  console.log( check);
+  if (check)
+  {
+    console.log( userInit + ' has enough juice' );
+   const score = await points.updateScore( item, operation ),
+        operationName = operations.getOperationName( operation ),
+        message = messages.getRandomMessage( operationName, item, score );
+        return slack.sendMessage( message, channel );
+  }
+  else
+  {
+    console.log( userInit + 'CANNOT UPDATE ' + item );
+    return slack.sendMessage( 'No Soup for <@' + userInit + '>!\nSorry but you exceded your duck limit for today, check back in 24 hours', channel );
+  }
+};
+
+/**
+ * Handles a random against a user, and then notifies the channel of the new score.
+ *
+ * @param {string} item      The Slack user ID (if user) or name (if thing) of the item being
+ *                           operated on.
+ * @param {string} operation The mathematical operation performed on the item's score.
+ * @param {object} channel   The ID of the channel (Cxxxxxxxx for public channels or Gxxxxxxxx for
+ *                           private channels - aka groups) that the message was sent from.
+ * @return {Promise} A Promise to send a Slack message back to the requesting channel after the
+ *                   points have been updated.
+ */
+const handlePlusRandom = async( item, operation, channel ) => {
+  const score = await points.randomScore( item, operation ),
+        operationName = operations.getOperationName( operation ),
+        message = messages.getRandomMessage( operationName, item, score );
+
+  return slack.sendMessage( message, channel );
+};
+const sendRemainingOps = async( event) => {
+
+        return slack.sendMessage( '<@' + event.user + '> has ' + (await points.getRemainingOps(event.user)) + ' operations left' , event.channel );
+};
+
+
+/**
+ * Handles a quack against a user, and then notifies the channel of the new score.
+ *
+ * @param {object} channel   The ID of the channel (Cxxxxxxxx for public channels or Gxxxxxxxx for
+ *                           private channels - aka groups) that the message was sent from.
+ * @return {Promise} A Promise to send a Slack message back to the requesting channel after the
+ *                   points have been updated.
+ */
+const handleQuack = async(channel ) => {
+
+  return slack.sendMessage( "Quack, Quack!", channel );
+};
+/**
+ * Handles a really random against a user, and then notifies the channel of the new score.
+ *
+ * @param {string} item      The Slack user ID (if user) or name (if thing) of the item being
+ *                           operated on.
+ * @param {string} operation The mathematical operation performed on the item's score.
+ * @param {object} channel   The ID of the channel (Cxxxxxxxx for public channels or Gxxxxxxxx for
+ *                           private channels - aka groups) that the message was sent from.
+ * @return {Promise} A Promise to send a Slack message back to the requesting channel after the
+ *                   points have been updated.
+ */
+const handlePlusReallyRandom = async( item, operation, channel ) => {
+  const score = await points.reallyRandomScore( item, operation ),
+        operationName = operations.getOperationName( operation ),
+        message = messages.getRandomMessage( operationName, item, score );
+
+  return slack.sendMessage( message, channel );
+};
+
+/**
+ * Handles a = against a user, and then notifies the channel of the new score.
+ *
+ * @param {string} item      The Slack user ID (if user) or name (if thing) of the item being
+ *                           operated on.
+ * @param {string} operation The mathematical operation performed on the item's score.
+ * @param {object} channel   The ID of the channel (Cxxxxxxxx for public channels or Gxxxxxxxx for
+ *                           private channels - aka groups) that the message was sent from.
+ * @return {Promise} A Promise to send a Slack message back to the requesting channel after the
+ *                   points have been updated.
+ */
+const handlePlusEqual = async( item, operation, channel ) => {
+  const score = await points.getScore( item, operation ),
         operationName = operations.getOperationName( operation ),
         message = messages.getRandomMessage( operationName, item, score );
 
@@ -89,22 +174,65 @@ const sayThankyou = ( event ) => {
 const sendHelp = ( event ) => {
 
   const botUserID = helpers.extractUserID( event.text );
-
+  var today = new Date();
+  const crypto = require('crypto')
+  , shasum = crypto.createHash('sha1');
+  shasum.update(event.user + today.getHours() + today.getMinutes() + today.getFullYear() + today.getMonth() + today.getDate());
   const message = (
     'Sure, here\'s what I can do:\n\n' +
     '• `@Someone++`: Add points to a user or a thing\n' +
     '• `@Someone--`: Subtract points from a user or a thing\n' +
-    '• `<@' + botUserID + '> leaderboard`: Display the leaderboard\n' +
-    '• `<@' + botUserID + '> help`: Display this message\n\n' +
+    '• `@Someone==`: Gets current points from a user or a thing\n' +
+    // '• `@Someone##`: Randomly adds or removes 1-5 points from a user or a thing\n' +
+    '• `<@' + botUserID + '> leaderboard`: Display the leaderboard for just you\n' +
+    '• `<@' + botUserID + '> leaderboardall ' + shasum.digest('hex') + '`: Display the leaderboard for everyone (you need your secret key)\n' +
+    '• `<@' + botUserID + '> help`: Display this message just for you\n\n' +
+    '• `<@' + botUserID + '> helpall`: Display this message for everyone\n\n' +
     'You\'ll need to invite me to a channel before I can recognise ' +
     '`++` and `--` commands in it.\n\n' +
-    'If you\'re a developer, you can teach me new things! ' +
-    'See <https://github.com/tdmalone/working-plusplus|my GitHub repo> to get started.'
+    'If you\'re a developer, you can teach me new things! :awwww_yeah:\n\n  ' 
+    
+     
+  );
+
+  return slack.sendEphemeral( message, event.channel,event.user );
+
+}; // SendHelp.
+
+/**
+ * Sends a help message, explaining the bot's commands, to the requesting channel.
+ *
+ * @param {object} event   A hash of a validated Slack 'app_mention' event. See the docs at
+ *                         https://api.slack.com/events-api#events_dispatched_as_json and
+ *                         https://api.slack.com/events/app_mention for details.
+ * @returns {Promise} A Promise to send the Slack message.
+ */
+const sendAllHelp = ( event ) => {
+
+  const botUserID = helpers.extractUserID( event.text );
+  const message = (
+    'Sure, here\'s what I can do:\n\n' +
+    '• `@Someone++`: Add points to a user or a thing\n' +
+    '• `@Someone--`: Subtract points from a user or a thing\n' +
+    '• `@Someone==`: Gets current points from a user or a thing\n' +
+    // '• `@Someone##`: Randomly adds or removes 1-5 points from a user or a thing\n' +
+    '• `<@' + botUserID + '> leaderboard`: Display the leaderboard for just you\n' +
+    '• `<@' + botUserID + '> leaderboardall {your secret key from help}`: Display the leaderboard for everyone (you need your secret key)\n' +
+    '• `<@' + botUserID + '> help`: Display this message just for you\n\n' +
+    '• `<@' + botUserID + '> helpall`: Display this message for everyone\n\n' +
+    'You\'ll need to invite me to a channel before I can recognise ' +
+    '`++` and `--` commands in it.\n\n' +
+    'If you\'re a developer, you can teach me new things! :awwww_yeah:\n\n  ' 
+    
+     
   );
 
   return slack.sendMessage( message, event.channel );
 
-}; // SendHelp.
+}; // SendAllHelp.
+const donothing = ( event ) => {
+
+}; // donothing
 
 const handlers = {
 
@@ -119,25 +247,83 @@ const handlers = {
    * @return {bool|Promise} Either `false` if the event cannot be handled, or a Promise to send a
    *                        Slack message back to the requesting channel.
    */
-  message: ( event ) => {
+      
+      
+      message: ( event ) => {
 
     // Extract the relevant data from the message text.
+
     const { item, operation } = helpers.extractPlusMinusEventData( event.text );
 
+
+    if (event.text.match(".*quack*.")) {
+
+      handleQuack(event.channel);
+    }
+    if (event.text.match("!xy")) {
+
+      slack.sendMessage("Solutions start with the problem, not your solution. Check out http://xyproblem.info", event.channel);
+    }
+    if (event.text.match("!ask")) {
+
+      slack.sendMessage("Don't ask to ask, instead of \"Does anyone use System Center App Controller 2012 R2\" ask \"When ever I try to use xyz feature of System Center App Controller it gives me an error that says abc. I have tried T, S, and U, to fix it. does anyone have any suggestions?\"", event.channel);
+    }
+    if (event.text.match("!thick")) {
+
+      slack.sendMessage("Thick imaging sucks, try just using the install.wim.", event.channel);
+    }
+
+    if (event.text.match("!tom")) {
+        if (event.channel == "GC7LSKHLH") {
+
+          slack.sendMessage("<@U4EA73N2H> is Delightful", event.channel);
+        }
+
+
+    }
+    if (event.text.match("!kevin")) {
+      if (event.channel == "GC7LSKHLH") {
+
+        slack.sendMessage("<@U1KBX1HGU> is amazing!", event.channel);
+      }
+      if (event.text.match("!pancakes")) {
+        if (event.channel == "GC7LSKHLH") {
+  
+          slack.sendMessage("https://i.imgur.com/XaUmq2e.gif", event.channel);
+        }
+  
+
+  }
     if ( ! item || ! operation ) {
       return false;
     }
-
     // Bail if the user is trying to ++ themselves...
     if ( item === event.user && '+' === operation ) {
       handleSelfPlus( event.user, event.channel );
       return false;
     }
+    // Bail if the user is trying to ## themselves...
+    if ( item === event.user && '#' === operation ) {
+      handleSelfPlus( event.user, event.channel );
+      return false;
+    }
+    if ( '=' === operation ) {
+      return handlePlusEqual( item, operation, event.channel );
+    }
+    if ( '#' === operation ) {
+      return handlePlusRandom( item, operation, event.channel );
+    }
+    if ( '!' === operation ) {
+      return handlePlusReallyRandom( item, operation, event.channel );
+    }
+
 
     // Otherwise, let's go!
-    return handlePlusMinus( item, operation, event.channel );
+    return handlePlusMinus( item, operation, event.channel, event.user );
 
   }, // Message event.
+
+ 
 
   /**
    * Handles 'app_mention' events sent from Slack, primarily by looking for known app commands, and
@@ -154,11 +340,17 @@ const handlers = {
   appMention: ( event, request ) => {
 
     const appCommandHandlers = {
+      leaderboardall: leaderboard.allHandler,
       leaderboard: leaderboard.handler,
+      helpall: sendAllHelp,
       help: sendHelp,
       thx: sayThankyou,
       thanks: sayThankyou,
-      thankyou: sayThankyou
+      thankyou: sayThankyou,
+      remainingops: sendRemainingOps,
+      '++': handlePlusMinus,
+      '--': handlePlusMinus,
+      '==': handlePlusEqual
     };
 
     const validCommands = Object.keys( appCommandHandlers ),
@@ -173,7 +365,7 @@ const handlers = {
       'few things I\'ve been trained to do. Send me `help` for more details.'
     );
 
-    return slack.sendMessage( defaultMessage, event.channel );
+    return slack.sendEphemeral( defaultMessage, event.channel,event.user );
 
   } // AppMention event.
 }; // Handlers.
@@ -229,6 +421,7 @@ module.exports = {
   handlePlusMinus,
   sayThankyou,
   sendHelp,
+  sendAllHelp,
   handlers,
   handleEvent
 };
